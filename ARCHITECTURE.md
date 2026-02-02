@@ -13,7 +13,7 @@ A unified architecture synthesizing the **AI Breadcrumbs & Constellation System*
 │                                                                         │
 │  ┌─────────────────────┐          ┌─────────────────────┐              │
 │  │  Constellation      │◄────────►│  Agent Interface    │              │
-│  │  System (PR #1)     │          │  Chain System (PR#2)│              │
+│  │  System (PR #1)     │          │  Chain System (PR #2)│              │
 │  └─────────┬───────────┘          └─────────┬───────────┘              │
 │            │                                 │                          │
 │            ▼                                 ▼                          │
@@ -156,6 +156,26 @@ class WeightPropagator {
     }
 }
 ```
+
+---
+
+## Constellation Node Types
+
+The constellation system defines four distinct node types, each representing a different aspect of the memetic web:
+
+| Type | Symbol | Weight | Purpose |
+|------|--------|--------|---------|
+| **signals** | `constellation:signals` | 0.33 | Tracks squid drops and propagation vectors. Represents the raw activity and signal injection into the memetic web. |
+| **influence** | `constellation:influence` | 0.50 | Maps DKP flows and memetic resonance. Measures the impact and spread of signals across the network. |
+| **hierarchy** | `constellation:hierarchy` | 0.17 | Defines ranking topology and network position. Establishes the relative standing of nodes within the constellation. |
+| **network** | `constellation:network` | varies | Quantifies connection strength and reach. Measures the structural relationships between nodes. |
+
+### Type Selection Guidelines
+
+- Use **signals** for nodes that represent input/action events
+- Use **influence** for nodes that measure impact or effect
+- Use **hierarchy** for nodes that define ordering or ranking
+- Use **network** for nodes that represent connections or relationships
 
 ---
 
