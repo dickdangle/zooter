@@ -119,14 +119,16 @@ class AgentManager:
     def attach_agent_to_interface(self, agent_id: str, interface_id: str):
         """Attach an agent to a specific interface."""
         agent = self.get_agent(agent_id)
-        if not agent or not self.active_chain:
+        if not agent:
             return False
         
-        interface = self.active_chain.get_interface(interface_id)
-        if interface:
-            interface.agent = agent
-            agent.interface = interface
-            return True
+        # Search for interface across all chains, not just active chain
+        for chain in self.interface_chains:
+            interface = chain.get_interface(interface_id)
+            if interface:
+                interface.agent = agent
+                agent.interface = interface
+                return True
         return False
 
 
