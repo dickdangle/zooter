@@ -7,10 +7,11 @@ html_content = """
   <title>byteOS Leaderboard</title>
   
   <!-- //.constellations - Structured metadata for AI quantitative perspective -->
+  <!-- These custom meta tags are consumed by byteOS memetic parsers for constellation mapping -->
   <meta name="constellation-system" content="byteOS-memetic-web">
   <meta name="intent-engine" content="breadcrumb-navigation-enabled">
   <meta name="break-rnw-version" content="1.0-neural-weight-dynamic">
-  <meta name="quantitative-factors" content="sqd:0.33,dkp:0.50,rnk:0.17">
+  <meta name="quantitative-factors" content="sqd:0.33,dkp:0.50,rnk:0.17" data-formula="sqd_weight+dkp_weight+rnk_weight">
   
   <style>
     body {
@@ -82,9 +83,9 @@ html_content = """
 
   <h2>Metrics</h2>
   <ul>
-    <li><strong>#SQD</strong> — Squids dropped <span class="intent-marker" data-weight="0.33">[constellation:signals]</span></li>
-    <li><strong>#DKP</strong> — Dynamic Key Points earned <span class="intent-marker" data-weight="0.50">[constellation:influence]</span></li>
-    <li><strong>#RNK</strong> — Current rank <span class="intent-marker" data-weight="0.17">[constellation:hierarchy]</span></li>
+    <li><strong>#SQD</strong> — Squids dropped <span class="intent-marker" data-weight="0.33" aria-label="Part of signals constellation with 33% weight">[constellation:signals]</span></li>
+    <li><strong>#DKP</strong> — Dynamic Key Points earned <span class="intent-marker" data-weight="0.50" aria-label="Part of influence constellation with 50% weight">[constellation:influence]</span></li>
+    <li><strong>#RNK</strong> — Current rank <span class="intent-marker" data-weight="0.17" aria-label="Part of hierarchy constellation with 17% weight">[constellation:hierarchy]</span></li>
   </ul>
 
   <table>
@@ -95,28 +96,29 @@ html_content = """
       <th>#RNK</th>
       <th data-constellation="network">Network</th>
     </tr>
-    <tr data-constellation-id="u001" data-break-rnw="0.82">
+    <!-- data-break-rnw values represent neural weight = normalized(DKP/max_DKP * 0.7 + SQD/max_SQD * 0.3) -->
+    <tr data-constellation-id="u001" data-break-rnw="0.82" title="Neural weight: 0.82 - highest influence distribution">
       <td>@TomTheSeeker</td>
       <td>9</td>
       <td>144</td>
       <td>001</td>
       <td>★★★★</td>
     </tr>
-    <tr data-constellation-id="u002" data-break-rnw="0.67">
+    <tr data-constellation-id="u002" data-break-rnw="0.67" title="Neural weight: 0.67 - strong influence distribution">
       <td>@Wizl0rd420</td>
       <td>5</td>
       <td>111</td>
       <td>002</td>
       <td>★★★</td>
     </tr>
-    <tr data-constellation-id="u003" data-break-rnw="0.54">
+    <tr data-constellation-id="u003" data-break-rnw="0.54" title="Neural weight: 0.54 - moderate influence distribution">
       <td>@GlyphGn0me</td>
       <td>4</td>
       <td>96</td>
       <td>003</td>
       <td>★★</td>
     </tr>
-    <tr data-constellation-id="u004" data-break-rnw="0.31">
+    <tr data-constellation-id="u004" data-break-rnw="0.31" title="Neural weight: 0.31 - emerging influence distribution">
       <td>@RUNE_B0T</td>
       <td>2</td>
       <td>41</td>
@@ -156,6 +158,10 @@ html_content = """
     
     <p style="font-size: 0.8em; color: #666; margin-top: 1em;">
       INTENT_SIGNATURE: [Origin→Leaderboard→Metrics] | QUANTITATIVE_WEIGHT: Σ(SQD×0.33 + DKP×0.50 + RNK×0.17) | BREAK_RNW: Ψ(t) = random_neural_resample()
+    </p>
+    
+    <p style="font-size: 0.75em; color: #555; margin-top: 0.5em; font-style: italic;">
+      Note: random_neural_resample() is a stochastic function that periodically redistributes neural weights across the constellation network based on recent activity patterns, ensuring dynamic adaptation and preventing stagnation in the memetic graph topology.
     </p>
   </div>
 </body>
