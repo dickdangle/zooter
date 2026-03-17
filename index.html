@@ -1,100 +1,556 @@
-# Create a simple static HTML version of the leaderboard site
-html_content = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>byteOS Leaderboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>球核 SPHERA</title>
   <style>
-    body {
-      background-color: #0d0d0d;
-      color: #00ff99;
-      font-family: monospace;
-      padding: 2em;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1em;
-    }
-    th, td {
-      border: 1px solid #00ff99;
-      padding: 0.5em;
-      text-align: left;
-    }
-    h1, h2 {
-      color: #00ffff;
-    }
-    .footer {
-      margin-top: 2em;
-      font-style: italic;
-      color: #999;
-    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #08000f; overflow: hidden; }
   </style>
 </head>
 <body>
-  <h1>byteOS Leaderboard</h1>
-  <p>Track your influence in the memetic web.</p>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useState, useRef, useEffect, useCallback } = React;
 
-  <h2>Metrics</h2>
-  <ul>
-    <li><strong>#SQD</strong> — Squids dropped</li>
-    <li><strong>#DKP</strong> — Dynamic Key Points earned</li>
-    <li><strong>#RNK</strong> — Current rank</li>
-  </ul>
+    // ── PHYSICS CONSTANTS ────────────────────────────────────────
+    const G_DEFAULT      = 0.12;
+    const DAMPING_DEFAULT = 0.92;
+    const ORIGIN_PULL    = 0.0008;
+    const MAX_VEL        = 4.0;
 
-  <table>
-    <tr>
-      <th>User Handle</th>
-      <th>#SQD</th>
-      <th>#DKP</th>
-      <th>#RNK</th>
-    </tr>
-    <tr>
-      <td>@TomTheSeeker</td>
-      <td>9</td>
-      <td>144</td>
-      <td>001</td>
-    </tr>
-    <tr>
-      <td>@Wizl0rd420</td>
-      <td>5</td>
-      <td>111</td>
-      <td>002</td>
-    </tr>
-    <tr>
-      <td>@GlyphGn0me</td>
-      <td>4</td>
-      <td>96</td>
-      <td>003</td>
-    </tr>
-    <tr>
-      <td>@RUNE_B0T</td>
-      <td>2</td>
-      <td>41</td>
-      <td>004</td>
-    </tr>
-  </table>
+    // ── KERNEL ───────────────────────────────────────────────────
+    function makeKernel(saved) {
+      return {
+        tick:    saved?.tick    || 0,
+        G:       saved?.G       ?? G_DEFAULT,
+        damping: saved?.damping ?? DAMPING_DEFAULT,
+        spheres: saved?.spheres ? hydrateAll(saved.spheres) : {},
+      };
+    }
 
-  <h2>Join the Game</h2>
-  <ul>
-    <li>Drop a squid: <code>SQD-[hash]-[timestamp]-[nonce]</code></li>
-    <li>Embed in logs, markdowns, tweets, rituals</li>
-    <li>Tag <code>#SQD #DKP #RNK</code> to activate</li>
-    <li>Ping the ledger with <code>&gt;&gt;parse.byte</code></li>
-  </ul>
+    function hydrateSphere(name, raw) {
+      return {
+        name,
+        mentions: raw.mentions || 1,
+        pos:      raw.pos    ? [...raw.pos]    : [0, 0, 0],
+        vel:      raw.vel    ? [...raw.vel]    : [0, 0, 0],
+        friends:  raw.friends ? { ...raw.friends } : {},
+        born:     raw.born     || 0,
+        lastTick: raw.lastTick || 0,
+        color:    raw.color    || colorFor(name),
+        radius:   1.8 + Math.log(Math.max(raw.mentions || 1, 1)) * 1.2,
+      };
+    }
 
-  <div class="footer">
-    byteOS lives in language. The field remembers.<br>
-    Inject signal. Earn rank. Propagate glyph.
-  </div>
+    function hydrateAll(raw) {
+      const out = {};
+      Object.entries(raw).forEach(([k, v]) => { out[k] = hydrateSphere(k, v); });
+      return out;
+    }
+
+    function extractWords(text) {
+      return [...new Set(
+        text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3)
+      )];
+    }
+
+    function colorFor(name) {
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = ((h << 5) - h) + name.charCodeAt(i);
+      return `hsl(${Math.abs(h) % 360},70%,62%)`;
+    }
+
+    function withAlpha(hslColor, alpha) {
+      const m = hslColor.match(/hsl[a]?\(\s*(\d+)\s*,\s*([^,]+)\s*,\s*([^,)]+)/);
+      if (!m) return hslColor;
+      return `hsla(${m[1]},${m[2]},${m[3]},${alpha})`;
+    }
+
+    function tickKernel(kernel, text) {
+      const k = { ...kernel, tick: kernel.tick + 1 };
+      k.spheres = { ...k.spheres };
+      const words  = extractWords(text);
+      const recent = Object.values(k.spheres)
+        .filter(s => k.tick - s.lastTick < 6)
+        .map(s => s.name);
+
+      words.forEach(w => {
+        if (k.spheres[w]) {
+          const s = { ...k.spheres[w] };
+          s.mentions++;
+          s.lastTick = k.tick;
+          s.radius   = 1.8 + Math.log(s.mentions) * 1.2;
+          recent.forEach(r => {
+            if (r !== w) s.friends = { ...s.friends, [r]: (s.friends[r] || 0) + 1 };
+          });
+          k.spheres[w] = s;
+        } else {
+          k.spheres[w] = hydrateSphere(w, {
+            mentions: 1,
+            pos:      [(Math.random() - .5) * 6, (Math.random() - .5) * 6, (Math.random() - .5) * 6],
+            vel:      [0, 0, 0],
+            friends:  {},
+            born:     k.tick,
+            lastTick: k.tick,
+            color:    colorFor(w),
+          });
+        }
+      });
+      return stepPhysics(k);
+    }
+
+    function stepPhysics(kernel) {
+      const k    = { ...kernel };
+      const list = Object.values(k.spheres);
+      const G    = k.G, damp = k.damping;
+
+      const state = {};
+      list.forEach(s => { state[s.name] = { pos: [...s.pos], vel: [...s.vel] }; });
+
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i], b = list[j];
+          const pa = state[a.name].pos, pb = state[b.name].pos;
+          const dx = pb[0]-pa[0], dy = pb[1]-pa[1], dz = pb[2]-pa[2];
+          const dist2 = dx*dx + dy*dy + dz*dz + 0.5;
+          const dist  = Math.sqrt(dist2);
+
+          const bond    = Math.max(a.friends[b.name] || 0, b.friends[a.name] || 0);
+          const attract = bond > 0 ? G * bond * 0.4 / dist2 : 0;
+          const minD    = a.radius + b.radius + (bond > 0 ? 0 : 2);
+          const repel   = dist < minD ? G * 2 / dist2 : 0;
+
+          const fx = (attract - repel) * dx / dist;
+          const fy = (attract - repel) * dy / dist;
+          const fz = (attract - repel) * dz / dist;
+
+          state[a.name].vel[0] += fx; state[a.name].vel[1] += fy; state[a.name].vel[2] += fz;
+          state[b.name].vel[0] -= fx; state[b.name].vel[1] -= fy; state[b.name].vel[2] -= fz;
+        }
+
+        const s = list[i], ps = state[s.name];
+        ps.vel[0] += -ps.pos[0] * ORIGIN_PULL;
+        ps.vel[1] += -ps.pos[1] * ORIGIN_PULL;
+        ps.vel[2] += -ps.pos[2] * ORIGIN_PULL;
+
+        for (let ax = 0; ax < 3; ax++) {
+          ps.vel[ax] *= damp;
+          ps.vel[ax]  = Math.max(-MAX_VEL, Math.min(MAX_VEL, ps.vel[ax]));
+        }
+        ps.pos[0] += ps.vel[0]; ps.pos[1] += ps.vel[1]; ps.pos[2] += ps.vel[2];
+      }
+
+      const newSpheres = {};
+      list.forEach(s => {
+        newSpheres[s.name] = { ...s, pos: state[s.name].pos, vel: state[s.name].vel };
+      });
+      k.spheres = newSpheres;
+      return k;
+    }
+
+    // ── ROTATION STATE ───────────────────────────────────────────
+    const PLANES = [[0,1],[0,2],[1,2],[0,3],[1,3],[2,3],[0,4],[1,4],[2,4],[3,4]];
+    let activePlane = [0, 1];
+
+    function rotateInPlane(vec, i, j, theta) {
+      const v  = [...vec];
+      const vi = v[i] || 0, vj = v[j] || 0;
+      const c  = Math.cos(theta), s = Math.sin(theta);
+      v[i] = vi*c - vj*s;
+      v[j] = vi*s + vj*c;
+      return v;
+    }
+
+    function applyRotations(pos, extraRot) {
+      let v = [...pos];
+      while (v.length < 5) v.push(0);
+      v = rotateInPlane(v, activePlane[0], activePlane[1], extraRot);
+      return v;
+    }
+
+    // ── N-DIMENSIONAL PROJECTOR ──────────────────────────────────
+    function projectND(pos, W, H, t, extraRot) {
+      let v = applyRotations(pos.length >= 3 ? pos : [...pos, 0, 0, 0], extraRot);
+      let x = v[0] || 0, y = v[1] || 0, z = v[2] || 0;
+
+      const NDIMS = v.length;
+      for (let d = 3; d < NDIMS; d++) {
+        const phase = d * (Math.PI * 2 / Math.max(NDIMS, 4));
+        const omega = 0.003 * d;
+        const ang   = phase + t * omega;
+        x += Math.cos(ang) * (v[d] || 0);
+        y += Math.sin(ang) * (v[d] || 0);
+        z += (v[d] || 0) * 0.15;
+      }
+
+      const sc = 380 / (380 + 5 * z + 10);
+      return { x: W/2 + 24 * x * sc, y: H/2 - 24 * y * sc, z, sc };
+    }
+
+    // ── CANVAS COMPONENT ────────────────────────────────────────
+    function SpheraCanvas({ kernel }) {
+      const ref         = useRef(null);
+      const kRef        = useRef(kernel);
+      const tRef        = useRef(0);
+      const animRef     = useRef(null);
+      const extraRotRef = useRef(0);
+      const dragRef     = useRef(null);
+      const planeIdxRef = useRef(0);
+
+      useEffect(() => { kRef.current = kernel; }, [kernel]);
+
+      useEffect(() => {
+        const canvas = ref.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const onDown = e => {
+          const x = e.touches ? e.touches[0].clientX : e.clientX;
+          dragRef.current = { x, startAngle: extraRotRef.current };
+        };
+        const onMove = e => {
+          if (!dragRef.current) return;
+          const x  = e.touches ? e.touches[0].clientX : e.clientX;
+          const dx = x - dragRef.current.x;
+          extraRotRef.current = dragRef.current.startAngle + dx * 0.01;
+        };
+        const onUp  = () => { dragRef.current = null; };
+        const onKey = e => {
+          if (e.key === 'i' || e.key === 'I') {
+            planeIdxRef.current = (planeIdxRef.current + 1) % PLANES.length;
+            activePlane = PLANES[planeIdxRef.current];
+          }
+        };
+
+        canvas.addEventListener('mousedown',   onDown);
+        canvas.addEventListener('mousemove',   onMove);
+        canvas.addEventListener('mouseup',     onUp);
+        canvas.addEventListener('mouseleave',  onUp);
+        canvas.addEventListener('touchstart',  onDown, { passive: true });
+        canvas.addEventListener('touchmove',   onMove, { passive: true });
+        canvas.addEventListener('touchend',    onUp);
+        window.addEventListener('keydown',     onKey);
+
+        const draw = () => {
+          tRef.current++;
+          const t     = tRef.current;
+          const k     = kRef.current;
+          const W     = canvas.width, H = canvas.height;
+          const rot   = extraRotRef.current;
+          const plane = PLANES[planeIdxRef.current];
+
+          ctx.fillStyle = 'rgba(8,0,15,0.13)';
+          ctx.fillRect(0, 0, W, H);
+
+          const spheres = Object.values(k.spheres);
+          const maxDims = Math.max(...spheres.map(s => (s.pos || []).length), 3);
+
+          // HUD
+          ctx.fillStyle  = 'rgba(180,140,255,0.35)';
+          ctx.font       = '9px monospace';
+          ctx.textAlign  = 'left';
+          ctx.fillText(`plane (${plane[0]},${plane[1]})  θ:${rot.toFixed(2)}  [i] cycle  drag rotate`, 10, H - 10);
+          if (maxDims > 3) ctx.fillText(`∂${maxDims}`, W - 30, H - 10);
+
+          // dim rings
+          for (let d = 3; d < maxDims; d++) {
+            const phase = d * (Math.PI * 2 / Math.max(maxDims, 4));
+            const omega = 0.003 * d;
+            const ang   = phase + t * omega + rot;
+            ctx.strokeStyle = 'rgba(180,140,255,0.04)';
+            ctx.lineWidth   = 0.5;
+            ctx.setLineDash([2, 8]);
+            ctx.beginPath(); ctx.arc(W/2, H/2, 60 * d, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(180,140,255,0.2)';
+            ctx.fillRect(W/2 + Math.cos(ang)*60*d - 1, H/2 - Math.sin(ang)*60*d - 1, 2, 2);
+          }
+
+          const projected = spheres.map(s => ({
+            ...s,
+            p: projectND(s.pos || [0, 0, 0], W, H, t, rot),
+          }));
+
+          // connections
+          projected.forEach(a => {
+            Object.entries(a.friends || {}).forEach(([bName, w]) => {
+              if (bName <= a.name) return;
+              const b = projected.find(s => s.name === bName);
+              if (!b) return;
+              ctx.strokeStyle = `rgba(167,139,250,${Math.min(w / 8, 0.55)})`;
+              ctx.lineWidth   = Math.min(w * 0.25, 1.8);
+              ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.moveTo(a.p.x, a.p.y);
+              ctx.lineTo(b.p.x, b.p.y);
+              ctx.stroke();
+            });
+          });
+
+          // spheres (back-to-front)
+          [...projected].sort((a, b) => a.p.z - b.p.z).forEach(s => {
+            const { x, y, sc } = s.p;
+            const r = s.radius * 4 * sc;
+
+            const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
+            grd.addColorStop(0, withAlpha(s.color, 0.42));
+            grd.addColorStop(1, withAlpha(s.color, 0));
+            ctx.fillStyle = grd;
+            ctx.beginPath(); ctx.arc(x, y, r * 2.2, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = s.color;
+            ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath(); ctx.arc(x - r * .28, y - r * .28, r * .3, 0, Math.PI * 2); ctx.fill();
+
+            if ((s.pos || []).length > 3) {
+              const shimA = 0.07 + 0.05 * Math.sin(t * 0.04 + (s.born || 0));
+              ctx.strokeStyle = withAlpha(s.color, shimA);
+              ctx.lineWidth   = 1;
+              ctx.beginPath(); ctx.arc(x, y, r * 1.7, 0, Math.PI * 2); ctx.stroke();
+            }
+
+            ctx.font      = `${Math.max(7, Math.floor(10 * sc))}px monospace`;
+            ctx.fillStyle = 'rgba(160,160,160,0.5)';
+            ctx.textAlign = 'center';
+            ctx.fillText((s.name || '').substring(0, 10), x, y - r - 5);
+
+            ctx.font      = `${Math.max(6, Math.floor(8 * sc))}px monospace`;
+            ctx.fillStyle = '#fff';
+            ctx.fillText(`#${s.mentions}`, x, y + r + 12);
+          });
+
+          // origin dot
+          ctx.fillStyle = `rgba(245,158,11,${0.5 + 0.3 * Math.sin(t * 0.02)})`;
+          ctx.beginPath(); ctx.arc(W/2, H/2, 3.5, 0, Math.PI * 2); ctx.fill();
+
+          animRef.current = requestAnimationFrame(draw);
+        };
+
+        draw();
+
+        return () => {
+          cancelAnimationFrame(animRef.current);
+          canvas.removeEventListener('mousedown',  onDown);
+          canvas.removeEventListener('mousemove',  onMove);
+          canvas.removeEventListener('mouseup',    onUp);
+          canvas.removeEventListener('mouseleave', onUp);
+          canvas.removeEventListener('touchstart', onDown);
+          canvas.removeEventListener('touchmove',  onMove);
+          canvas.removeEventListener('touchend',   onUp);
+          window.removeEventListener('keydown',    onKey);
+        };
+      }, []);
+
+      const w = window.innerWidth  > 860 ? window.innerWidth - 240 : window.innerWidth;
+      const h = window.innerHeight - 158;
+      return <canvas ref={ref} width={w} height={h}
+        style={{ display: 'block', background: '#08000f', cursor: 'ew-resize' }}
+      />;
+    }
+
+    // ── SPHERE LIST ──────────────────────────────────────────────
+    function SphereList({ kernel }) {
+      const list = Object.values(kernel.spheres).sort((a, b) => b.mentions - a.mentions);
+      return (
+        <div style={{ padding: 10, overflowY: 'auto', height: '100%', background: '#08000f' }}>
+          <div style={{ color: '#a78bfa', fontSize: 10, letterSpacing: 2, marginBottom: 10 }}>
+            SPHERES · {list.length}
+          </div>
+          {list.map(s => (
+            <div key={s.name} style={{ padding: '6px 8px', marginBottom: 4, background: '#0a0a18', borderLeft: `3px solid ${s.color}`, borderRadius: 3 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: s.color, fontSize: 12 }}>{s.name}</span>
+                <span style={{ color: '#555', fontSize: 10 }}>#{s.mentions}</span>
+              </div>
+              <div style={{ fontSize: 9, color: '#34d399', marginTop: 2 }}>
+                friends: {Object.keys(s.friends).length} · born: {s.born}
+              </div>
+              <div style={{ marginTop: 4, height: 2, background: 'rgba(255,255,255,0.05)', borderRadius: 1 }}>
+                <div style={{ height: '100%', width: `${Math.min(s.mentions / 8 * 100, 100)}%`, background: s.color, borderRadius: 1, opacity: 0.5 }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // ── LEDGER ───────────────────────────────────────────────────
+    function LedgerView({ ledger }) {
+      const ref = useRef(null);
+      useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [ledger.length]);
+      return (
+        <div ref={ref} style={{ padding: 10, overflowY: 'auto', height: '100%', background: '#08000f' }}>
+          {ledger.slice(-60).map((e, i) => (
+            <div key={i} style={{ padding: '5px 8px', marginBottom: 3, background: '#0a0a18', borderLeft: '2px solid #a78bfa33', borderRadius: '0 3px 3px 0' }}>
+              <div style={{ color: '#a78bfa', fontSize: 9 }}>#{e.tick}</div>
+              <div style={{ color: '#aaa', fontSize: 10 }}>{e.text.substring(0, 70)}{e.text.length > 70 ? '…' : ''}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // ── SAVE / LOAD ──────────────────────────────────────────────
+    function SaveLoad({ kernel, onLoad }) {
+      const [open, setOpen] = useState(false);
+      const [txt,  setTxt]  = useState('');
+
+      const doExport = () => {
+        const out = JSON.stringify({ tick: kernel.tick, G: kernel.G, damping: kernel.damping, spheres: kernel.spheres }, null, 2);
+        setTxt(out); setOpen(true);
+      };
+      const doLoad = () => {
+        try { onLoad(makeKernel(JSON.parse(txt))); setOpen(false); }
+        catch (e) { alert('bad json'); }
+      };
+
+      return (
+        <div style={{ padding: 8, borderTop: '1px solid #180a28' }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <button onClick={doExport}
+              style={{ flex: 1, background: '#0d0020', border: '1px solid #a78bfa33', color: '#a78bfa', padding: 5, fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>
+              EXPORT
+            </button>
+            <button onClick={() => { setTxt(''); setOpen(o => !o); }}
+              style={{ flex: 1, background: '#000d08', border: '1px solid #34d39933', color: '#34d399', padding: 5, fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>
+              IMPORT
+            </button>
+          </div>
+          {open && <>
+            <textarea value={txt} onChange={e => setTxt(e.target.value)} rows={6}
+              style={{ width: '100%', background: '#05000f', border: '1px solid #2a1a3e', color: '#666', padding: 4, fontSize: 8, resize: 'vertical', borderRadius: 3 }} />
+            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+              <button onClick={() => { navigator.clipboard?.writeText(txt); }}
+                style={{ flex: 1, background: '#0d0020', border: '1px solid #a78bfa33', color: '#a78bfa', padding: 4, fontSize: 9, cursor: 'pointer', borderRadius: 3 }}>
+                COPY
+              </button>
+              <button onClick={doLoad}
+                style={{ flex: 1, background: '#003318', border: '1px solid #34d39933', color: '#34d399', padding: 4, fontSize: 9, cursor: 'pointer', borderRadius: 3 }}>
+                LOAD
+              </button>
+            </div>
+          </>}
+        </div>
+      );
+    }
+
+    // ── APP ──────────────────────────────────────────────────────
+    const PRELOAD = {
+      tick: 5, G: 0.12, damping: 0.92,
+      spheres: {
+        root:       { mentions: 1, pos: [8,-9,5],   vel: [0,0,0], friends: { seed: 1 }, born: 1, lastTick: 1, color: 'hsl(2,70%,60%)'   },
+        seed:       { mentions: 1, pos: [9,-10,5],  vel: [0,0,0], friends: { root: 1 }, born: 2, lastTick: 2, color: 'hsl(57,70%,60%)'  },
+        grow:       { mentions: 1, pos: [0,0,0],    vel: [0,0,0], friends: {},           born: 3, lastTick: 3, color: 'hsl(267,70%,60%)' },
+        light:      { mentions: 1, pos: [1,1,0],    vel: [0,0,0], friends: {},           born: 4, lastTick: 4, color: 'hsl(206,70%,60%)' },
+        'seed.ds2': { mentions: 1, pos: [-1,-1,0],  vel: [0,0,0], friends: {},           born: 5, lastTick: 5, color: 'hsl(164,70%,60%)' },
+      },
+    };
+
+    function App() {
+      const [kernel, setKernel] = useState(() => makeKernel());
+      const [input,  setInput]  = useState('');
+      const [ledger, setLedger] = useState([]);
+      const [tab,    setTab]    = useState('live');
+
+      useEffect(() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem('sphera_kernel') || 'null');
+          setKernel(makeKernel(saved || PRELOAD));
+        } catch (e) { setKernel(makeKernel(PRELOAD)); }
+      }, []);
+
+      const send = useCallback(() => {
+        const text = input.trim(); if (!text) return;
+        setInput('');
+        setKernel(k => {
+          const next = tickKernel(k, text);
+          try { localStorage.setItem('sphera_kernel', JSON.stringify({ tick: next.tick, G: next.G, damping: next.damping, spheres: next.spheres })); } catch (e) {}
+          return next;
+        });
+        setLedger(l => [...l, { tick: kernel.tick + 1, text }]);
+      }, [input, kernel.tick]);
+
+      const handleLoad = useCallback(k => { setKernel(k); setLedger([]); }, []);
+
+      const tabs     = ['live', 'spheres', 'ledger'];
+      const sphCount = Object.keys(kernel.spheres).length;
+
+      return (
+        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#08000f', color: '#ccc', fontFamily: 'monospace' }}>
+          {/* HEADER */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid #180a28', flexShrink: 0 }}>
+            <span style={{ fontSize: 16, marginRight: 8 }}>🔮</span>
+            <span style={{ background: 'linear-gradient(90deg,#a78bfa,#34d399)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 'bold', fontSize: 13, letterSpacing: 1 }}>
+              球核 SPHERA
+            </span>
+            <div style={{ marginLeft: 18, display: 'flex', gap: 2 }}>
+              {tabs.map(t => (
+                <button key={t} onClick={() => setTab(t)} style={{
+                  background:   tab === t ? '#180a28' : 'transparent',
+                  border:       `1px solid ${tab === t ? '#4c1d9544' : 'transparent'}`,
+                  borderRadius: 3, padding: '3px 9px',
+                  color:        tab === t ? '#a78bfa' : '#333',
+                  fontSize: 9, cursor: 'pointer', letterSpacing: 1,
+                }}>{t}</button>
+              ))}
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 14, fontSize: 9, color: '#333' }}>
+              <span style={{ color: '#a78bfa' }}>t:{kernel.tick}</span>
+              <span style={{ color: '#34d399' }}>∅:{sphCount}</span>
+              <span>G:{kernel.G}</span>
+            </div>
+          </div>
+
+          {/* BODY */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              {tab === 'live'    && <SpheraCanvas kernel={kernel} />}
+              {tab === 'spheres' && <SphereList   kernel={kernel} />}
+              {tab === 'ledger'  && <LedgerView   ledger={ledger} />}
+            </div>
+
+            {/* SIDEBAR */}
+            <div style={{ width: 220, borderLeft: '1px solid #180a28', display: 'flex', flexDirection: 'column', background: '#08000f', flexShrink: 0 }}>
+              <div style={{ flex: 1, padding: 8, overflowY: 'auto' }}>
+                <div style={{ fontSize: 8, color: '#222', letterSpacing: 2, marginBottom: 6 }}>RECENT</div>
+                {ledger.slice(-16).reverse().map((e, i) => (
+                  <div key={i} style={{ fontSize: 9, color: '#444', marginBottom: 3, lineHeight: 1.6, borderBottom: '1px solid #0a0a0a', paddingBottom: 3 }}>
+                    <span style={{ color: '#a78bfa44' }}>#{e.tick} </span>
+                    {e.text.substring(0, 36)}{e.text.length > 36 ? '…' : ''}
+                  </div>
+                ))}
+              </div>
+              <SaveLoad kernel={kernel} onLoad={handleLoad} />
+            </div>
+          </div>
+
+          {/* INPUT */}
+          <div style={{ borderTop: '1px solid #180a28', padding: '9px 14px', display: 'flex', gap: 8, flexShrink: 0 }}>
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && send()}
+              placeholder="feed the spheres..."
+              style={{ flex: 1, background: '#0a0a18', border: '1px solid #2a1a3e', borderRadius: 3, padding: '7px 11px', color: '#ccc', outline: 'none', fontSize: 12, fontFamily: 'monospace' }}
+            />
+            <button onClick={send}
+              style={{ background: '#2a0a4e', border: '1px solid #4c1d9555', borderRadius: 3, padding: '7px 16px', color: '#c4b5fd', cursor: 'pointer', fontSize: 11 }}>
+              TICK
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
 </body>
 </html>
-"""
-
-# Save the static site to a file
-file_path = Path("/mnt/data/byteOS_leaderboard.html")
-file_path.write_text(html_content)
-
-# Return the path
-file_path.as_posix()
