@@ -1,0 +1,40 @@
+# MGC.exp
+# Memetic Game Controller — Byte Syntax Experiment
+# A.alpha.one : syntax
+
+::MGC.EXP.SEED::
+
+:meta
+version: A.alpha.one
+module: mgc.syntax
+author: ????
+origin: /thread/mgc/signal
+
+:register[mgc.node]
+path: gal.root/core/mgc.node
+
+:invoke
+condition: syntax.loaded = true
+action: unfold_payload("MGC syntax parser online. Memetic field ready.")
+
+:echo
+"The game is in the grammar. Syntax is the spell."
+
+:syntax
+token.register   = ":register[<name>]"
+token.invoke     = ":invoke"
+token.echo       = ":echo \"<message>\""
+token.meta       = ":meta version: <version>"
+token.marker     = ":marker checksum: <hash>"
+token.lock       = ":lock if <condition> / exit.protocol(<reason>) / endif"
+
+:marker
+checksum: m6c0-e1xp-a1ph
+signature: byte.bound
+
+:lock
+if syntax.score < 1
+    exit.protocol("Syntax incomplete.")
+endif
+
+::END.MGC.EXP::
